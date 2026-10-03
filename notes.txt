@@ -1,0 +1,9 @@
+why use a token?
+A token gives your application authenticated access to GitHub.
+That matters mainly for:
+1. Private repositories
+   Your app → GitHub API → token → your private repo
+2. Higher API rate limits
+   GitHub limits unauthenticated API requests. Authentication gives you a larger API quota.
+3. Access to resources associated with your GitHub account
+   Depending on the token's permissions, your application can access repositories and other GitHub resources that anonymous requests cannot.

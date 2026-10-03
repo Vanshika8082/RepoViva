@@ -1,0 +1,55 @@
+# ─────────────────────────────
+# API
+# ─────────────────────────────
+
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+
+# ─────────────────────────────
+# HTTP / GitHub API
+# ─────────────────────────────
+
+httpx
+PyGithub
+
+
+# ─────────────────────────────
+# LangChain
+# ─────────────────────────────
+
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-groq
+
+
+# ─────────────────────────────
+# MongoDB
+# ─────────────────────────────
+
+pymongo
+
+
+# ─────────────────────────────
+# Document Processing
+# ─────────────────────────────
+
+docling
+
+
+# ─────────────────────────────
+# Environment / Utilities
+# ─────────────────────────────
+
+python-dotenv
+
+
+# ─────────────────────────────
+# Data / Parsing
+# ─────────────────────────────
+
+tree-sitter
