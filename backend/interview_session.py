@@ -2,7 +2,8 @@ from interview_engine import (
     generate_first_question,
     generate_next_question,
     conduct_turn,
-    generate_final_feedback
+    generate_final_feedback,
+    determine_strategy
 )
 
 
@@ -25,6 +26,10 @@ class InterviewSession:
             )
 
         self.difficulty = difficulty
+
+        # Difficulty can now adapt during the interview
+        self.current_difficulty = difficulty
+
         self.total_questions = total_questions
 
         self.question_number = 0
@@ -46,7 +51,7 @@ class InterviewSession:
         self.question_number = 1
 
         question = generate_first_question(
-            self.difficulty
+            self.current_difficulty
         )
 
         self.current_question = question
@@ -69,7 +74,7 @@ class InterviewSession:
         self.current_record["pending_answer"] = answer
 
         result = conduct_turn(
-            difficulty=self.difficulty,
+            difficulty=self.current_difficulty,
             current_prompt=self.current_prompt,
             history=self.history,
             current_record=self.current_record,
@@ -77,7 +82,7 @@ class InterviewSession:
         )
 
         # --------------------------------
-        # Store this answer + evaluation
+        # Store answer + evaluation
         # --------------------------------
 
         self.current_record["turns"].append({
@@ -119,12 +124,42 @@ class InterviewSession:
             }
 
         # --------------------------------
-        # EVALUATE / FINISH TOPIC
+        # TOPIC COMPLETE
         # --------------------------------
 
         self.history.append(
             self.current_record
         )
+
+        # --------------------------------
+        # Determine adaptive strategy
+        # --------------------------------
+
+        evaluation = self.current_record["turns"][-1]["evaluation"]
+
+        strategy = determine_strategy(
+            evaluation
+        )
+
+        # --------------------------------
+        # Adapt difficulty
+        # --------------------------------
+
+        if strategy == "increase_difficulty":
+
+            if self.current_difficulty == "easy":
+                self.current_difficulty = "medium"
+
+            elif self.current_difficulty == "medium":
+                self.current_difficulty = "hard"
+
+        elif strategy == "decrease_difficulty":
+
+            if self.current_difficulty == "hard":
+                self.current_difficulty = "medium"
+
+            elif self.current_difficulty == "medium":
+                self.current_difficulty = "easy"
 
         # --------------------------------
         # Interview finished
@@ -158,9 +193,10 @@ class InterviewSession:
         self.follow_up_count = 0
 
         next_question = generate_next_question(
-            difficulty=self.difficulty,
+            difficulty=self.current_difficulty,
             history=self.history,
-            previous_questions=self.previous_questions
+            previous_questions=self.previous_questions,
+            strategy=strategy
         )
 
         self.current_question = next_question
@@ -179,5 +215,7 @@ class InterviewSession:
         return {
             "type": "next",
             "message": next_question,
-            "finished": False
+            "finished": False,
+            "strategy": strategy,
+            "difficulty": self.current_difficulty
         }

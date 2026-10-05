@@ -211,11 +211,39 @@ RULES:
         generate_response(prompt)
     )
 
+def determine_strategy(evaluation):
+
+    correctness = evaluation["correctness"]
+    clarity = evaluation["clarity"]
+    depth = evaluation["depth"]
+
+    average = (
+        correctness +
+        clarity +
+        depth
+    ) / 3
+
+    # Candidate understands the code,
+    # but lacks deeper reasoning.
+    if correctness >= 7 and depth <= 5:
+        return "probe_reasoning"
+
+    # Candidate understands the answer
+    # very well.
+    if average >= 8:
+        return "increase_difficulty"
+
+    # Candidate is struggling.
+    if average <= 4:
+        return "decrease_difficulty"
+
+    return "maintain_difficulty"
 
 def generate_next_question(
     difficulty,
     history,
-    previous_questions
+    previous_questions,
+    strategy="maintain_difficulty"
 ):
 
     history_text = format_history(history)
@@ -239,6 +267,53 @@ Previous questions:
         len(previous_questions) % len(QUESTION_TYPES)
     ]
 
+    ADAPTATION = {
+        "increase_difficulty": """
+The candidate performed strongly on the previous question.
+
+Increase the technical depth of this question.
+Explore deeper reasoning, trade-offs, edge cases,
+performance, scalability, architecture, or failure scenarios.
+
+Do not make the question unnecessarily difficult.
+It should still be grounded in the candidate's project.
+""",
+
+        "decrease_difficulty": """
+The candidate struggled with the previous question.
+
+Make this question more approachable.
+Focus on fundamental understanding of the actual
+implementation and project.
+
+Do not make the candidate feel penalized.
+Do not ask an advanced architecture question.
+""",
+
+        "probe_reasoning": """
+The candidate appears to understand how the implementation works,
+but did not demonstrate strong technical reasoning.
+
+Do not simply increase the difficulty.
+
+Instead, ask about WHY the candidate chose the approach,
+what trade-offs it has, what limitations it has,
+or what alternative they could have used.
+""",
+
+        "maintain_difficulty": """
+The candidate demonstrated an appropriate level of understanding.
+
+Maintain approximately the same difficulty while exploring
+another technical aspect of the project.
+"""
+    }
+
+    adaptation = ADAPTATION.get(
+        strategy,
+        ADAPTATION["maintain_difficulty"]
+    )
+
     prompt = f"""
 You are a senior software engineer conducting a realistic technical
 interview about the candidate's own GitHub project.
@@ -248,6 +323,9 @@ DIFFICULTY:
 
 DIFFICULTY PROFILE:
 {DIFFICULTY_PROFILE[difficulty]}
+
+ADAPTIVE INTERVIEW STRATEGY:
+{adaptation}
 
 TARGET AREA:
 {question_type}
@@ -269,6 +347,7 @@ RULES:
 - Keep it conversational.
 - Ask about something that has not already been covered.
 - Build naturally on the previous conversation when appropriate.
+- Follow the adaptive interview strategy above.
 - Do not repeat or rephrase an earlier question.
 - Do not ask multiple questions.
 - Do not ask syntax or memorization questions.
@@ -276,17 +355,17 @@ RULES:
 - Do not give feedback.
 - Do not give the answer.
 - Do not mention "provided code" or "retrieved context".
+- Do not mention the adaptive strategy.
 - Do not sound like a quiz.
 - Return ONLY the question.
 
 The candidate should feel like they are speaking with an experienced
-software engineer.
+software engineer sitting across from them.
 """
 
     return clean_question(
         generate_response(prompt)
     )
-
 
 def conduct_turn(
     difficulty,
@@ -658,3 +737,31 @@ Do not add anything else.
             "FINAL_ASSESSMENT"
         )
     }
+
+def determine_strategy(evaluation):
+
+    correctness = evaluation["correctness"]
+    clarity = evaluation["clarity"]
+    depth = evaluation["depth"]
+
+    average = (
+        correctness +
+        clarity +
+        depth
+    ) / 3
+
+    # Candidate understands the implementation,
+    # but does not demonstrate strong reasoning.
+    if correctness >= 7 and depth <= 5:
+        return "probe_reasoning"
+
+    # Candidate performed very strongly.
+    if average >= 8:
+        return "increase_difficulty"
+
+    # Candidate is struggling significantly.
+    if average <= 4:
+        return "decrease_difficulty"
+
+    # Candidate is performing at an appropriate level.
+    return "maintain_difficulty"
