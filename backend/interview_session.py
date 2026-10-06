@@ -2,8 +2,7 @@ from interview_engine import (
     generate_first_question,
     generate_next_question,
     conduct_turn,
-    generate_final_feedback,
-    determine_strategy
+    generate_final_feedback
 )
 
 
@@ -25,14 +24,13 @@ class InterviewSession:
                 "Number of questions must be at least 1."
             )
 
+        # User-selected difficulty is locked
         self.difficulty = difficulty
-
-        # Difficulty can now adapt during the interview
-        self.current_difficulty = difficulty
 
         self.total_questions = total_questions
 
         self.question_number = 0
+        self.questions_asked = 0
 
         self.current_question = None
         self.current_prompt = None
@@ -49,9 +47,10 @@ class InterviewSession:
     def start(self):
 
         self.question_number = 1
+        self.questions_asked = 1
 
         question = generate_first_question(
-            self.current_difficulty
+            self.difficulty
         )
 
         self.current_question = question
@@ -74,7 +73,7 @@ class InterviewSession:
         self.current_record["pending_answer"] = answer
 
         result = conduct_turn(
-            difficulty=self.current_difficulty,
+            difficulty=self.difficulty,
             current_prompt=self.current_prompt,
             history=self.history,
             current_record=self.current_record,
@@ -94,14 +93,40 @@ class InterviewSession:
         self.current_record["pending_answer"] = None
 
         # --------------------------------
-        # REACT
+        # REACT / FOLLOW-UP
         # --------------------------------
 
         if result["type"] == "react":
 
             self.follow_up_count += 1
+            self.questions_asked += 1
 
             self.current_prompt = result["message"]
+
+            # If this follow-up reaches the requested
+            # total number of questions, finish the interview.
+            if self.questions_asked >= self.total_questions:
+
+                self.history.append(
+                    self.current_record
+                )
+
+                self.completed = True
+
+                feedback = generate_final_feedback(
+                    difficulty=self.difficulty,
+                    history=self.history
+                )
+
+                return {
+                    "type": "complete",
+                    "message": (
+                        "Thanks. That completes the interview. "
+                        "I'll now prepare your final assessment."
+                    ),
+                    "feedback": feedback,
+                    "finished": True
+                }
 
             return {
                 "type": "react",
@@ -117,6 +142,7 @@ class InterviewSession:
 
             self.follow_up_count += 1
 
+            # A hint does NOT count as another question.
             return {
                 "type": "hint",
                 "message": result["message"],
@@ -130,36 +156,6 @@ class InterviewSession:
         self.history.append(
             self.current_record
         )
-
-        # --------------------------------
-        # Determine adaptive strategy
-        # --------------------------------
-
-        evaluation = self.current_record["turns"][-1]["evaluation"]
-
-        strategy = determine_strategy(
-            evaluation
-        )
-
-        # --------------------------------
-        # Adapt difficulty
-        # --------------------------------
-
-        if strategy == "increase_difficulty":
-
-            if self.current_difficulty == "easy":
-                self.current_difficulty = "medium"
-
-            elif self.current_difficulty == "medium":
-                self.current_difficulty = "hard"
-
-        elif strategy == "decrease_difficulty":
-
-            if self.current_difficulty == "hard":
-                self.current_difficulty = "medium"
-
-            elif self.current_difficulty == "medium":
-                self.current_difficulty = "easy"
 
         # --------------------------------
         # Interview finished
@@ -189,14 +185,14 @@ class InterviewSession:
         # --------------------------------
 
         self.question_number += 1
+        self.questions_asked += 1
 
         self.follow_up_count = 0
 
         next_question = generate_next_question(
-            difficulty=self.current_difficulty,
+            difficulty=self.difficulty,
             history=self.history,
-            previous_questions=self.previous_questions,
-            strategy=strategy
+            previous_questions=self.previous_questions
         )
 
         self.current_question = next_question
@@ -216,6 +212,5 @@ class InterviewSession:
             "type": "next",
             "message": next_question,
             "finished": False,
-            "strategy": strategy,
-            "difficulty": self.current_difficulty
+            "difficulty": self.difficulty
         }

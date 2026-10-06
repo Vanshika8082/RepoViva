@@ -4,17 +4,38 @@ from groq_client import generate_response
 from retrieval import search_similar_chunks
 
 
+# ============================================================
+# DIFFICULTY PROFILES
+# ============================================================
+
 DIFFICULTY_PROFILE = {
+
     "easy": """
 The candidate should demonstrate a basic understanding of their own project.
 
+The question MUST remain beginner-friendly.
+
 Focus on:
-- What important features do
+- What the project does
+- Important features
 - Basic data flow
 - Responsibilities of functions or components
 - Simple implementation decisions
+- Basic error handling
+
+Avoid:
+- Advanced architecture
+- Scalability
+- Distributed systems
+- Complex performance analysis
+- Advanced security
+- Deep production failure scenarios
+- Complex system design
 
 Do not expect advanced architecture.
+
+The question must remain clearly EASY even if the candidate performs
+very well.
 """,
 
     "medium": """
@@ -29,6 +50,11 @@ Focus on:
 - Error handling
 - Edge cases
 - Practical consequences
+- Moderate technical reasoning
+
+Do not turn the question into a hard-level architecture question.
+
+The question must remain clearly MEDIUM.
 """,
 
     "hard": """
@@ -46,9 +72,15 @@ Focus on:
 - Production readiness
 
 Everything must remain grounded in the actual project.
+
+The question must remain clearly HARD.
 """
 }
 
+
+# ============================================================
+# QUESTION TYPES
+# ============================================================
 
 QUESTION_TYPES = [
     "project understanding",
@@ -61,7 +93,12 @@ QUESTION_TYPES = [
 ]
 
 
+# ============================================================
+# CLEAN QUESTION
+# ============================================================
+
 def clean_question(text):
+
     text = text.strip()
 
     prefixes = [
@@ -72,14 +109,25 @@ def clean_question(text):
     ]
 
     for prefix in prefixes:
+
         if text.lower().startswith(prefix.lower()):
+
             text = text[len(prefix):].strip()
 
     return text.split("\n")[0].strip()
 
 
+# ============================================================
+# EXTRACT FIELD
+# ============================================================
+
 def extract_field(text, field, default=""):
-    pattern = rf"^{re.escape(field)}:\s*(.+?)(?=\n[A-Z_]+:|$)"
+
+    pattern = (
+        rf"^{re.escape(field)}:\s*"
+        rf"(.+?)"
+        rf"(?=\n[A-Z_]+:|$)"
+    )
 
     match = re.search(
         pattern,
@@ -88,25 +136,51 @@ def extract_field(text, field, default=""):
     )
 
     if match:
+
         return match.group(1).strip()
 
     return default
 
 
-def extract_score(text, field):
-    value = extract_field(text, field, "0")
+# ============================================================
+# EXTRACT SCORE
+# ============================================================
 
-    match = re.search(r"\d+", value)
+def extract_score(text, field):
+
+    value = extract_field(
+        text,
+        field,
+        "0"
+    )
+
+    match = re.search(
+        r"\d+",
+        value
+    )
 
     if match:
-        score = int(match.group())
 
-        return max(0, min(10, score))
+        score = int(
+            match.group()
+        )
+
+        return max(
+            0,
+            min(10, score)
+        )
 
     return 0
 
 
-def get_repository_context(query, limit=6):
+# ============================================================
+# REPOSITORY CONTEXT
+# ============================================================
+
+def get_repository_context(
+    query,
+    limit=6
+):
 
     results = search_similar_chunks(
         query,
@@ -123,17 +197,29 @@ def get_repository_context(query, limit=6):
             f"Code:\n{result['content']}"
         )
 
-    return "\n\n---\n\n".join(context)
+    return "\n\n---\n\n".join(
+        context
+    )
 
+
+# ============================================================
+# FORMAT HISTORY
+# ============================================================
 
 def format_history(history):
 
     if not history:
-        return "No previous interview conversation."
+
+        return (
+            "No previous interview conversation."
+        )
 
     sections = []
 
-    for index, record in enumerate(history, start=1):
+    for index, record in enumerate(
+        history,
+        start=1
+    ):
 
         text = [
             f"MAIN TOPIC {index}:",
@@ -151,6 +237,7 @@ def format_history(history):
             )
 
             if turn.get("evaluation"):
+
                 evaluation = turn["evaluation"]
 
                 text.append(
@@ -160,16 +247,27 @@ def format_history(history):
                     f"depth={evaluation['depth']}"
                 )
 
-        sections.append("\n".join(text))
+        sections.append(
+            "\n".join(text)
+        )
 
-    return "\n\n====================\n\n".join(sections)
+    return (
+        "\n\n====================\n\n"
+        .join(sections)
+    )
 
 
-def generate_first_question(difficulty):
+# ============================================================
+# FIRST QUESTION
+# ============================================================
+
+def generate_first_question(
+    difficulty
+):
 
     context = get_repository_context(
-        "What are the most important features and technical components "
-        "of this project?"
+        "What are the most important features "
+        "and technical components of this project?"
     )
 
     prompt = f"""
@@ -180,11 +278,33 @@ You are sitting across from the candidate.
 
 This is the FIRST question.
 
+The candidate explicitly selected:
+
 DIFFICULTY:
 {difficulty}
 
 DIFFICULTY PROFILE:
 {DIFFICULTY_PROFILE[difficulty]}
+
+IMPORTANT:
+
+The selected difficulty is LOCKED.
+
+The question MUST remain exactly at the selected difficulty level.
+
+If the selected difficulty is EASY:
+- Keep the question beginner-friendly.
+- Do not ask advanced architecture questions.
+- Do not ask scalability questions.
+- Do not ask complex performance questions.
+- Do not ask advanced security questions.
+
+If the selected difficulty is MEDIUM:
+- Keep the question at a solid intermediate technical level.
+- Do not turn it into a hard architecture question.
+
+If the selected difficulty is HARD:
+- Ask deep technical questions appropriate for a senior-level interview.
 
 PROJECT CONTEXT:
 {context}
@@ -211,42 +331,20 @@ RULES:
         generate_response(prompt)
     )
 
-def determine_strategy(evaluation):
 
-    correctness = evaluation["correctness"]
-    clarity = evaluation["clarity"]
-    depth = evaluation["depth"]
-
-    average = (
-        correctness +
-        clarity +
-        depth
-    ) / 3
-
-    # Candidate understands the code,
-    # but lacks deeper reasoning.
-    if correctness >= 7 and depth <= 5:
-        return "probe_reasoning"
-
-    # Candidate understands the answer
-    # very well.
-    if average >= 8:
-        return "increase_difficulty"
-
-    # Candidate is struggling.
-    if average <= 4:
-        return "decrease_difficulty"
-
-    return "maintain_difficulty"
+# ============================================================
+# NEXT QUESTION
+# ============================================================
 
 def generate_next_question(
     difficulty,
     history,
-    previous_questions,
-    strategy="maintain_difficulty"
+    previous_questions
 ):
 
-    history_text = format_history(history)
+    history_text = format_history(
+        history
+    )
 
     previous_text = "\n".join(
         f"- {question}"
@@ -254,69 +352,28 @@ def generate_next_question(
     )
 
     query = f"""
-Find an important technical aspect of this repository that has not already
-been discussed.
+Find an important technical aspect of this repository
+that has not already been discussed.
 
 Previous questions:
 {previous_text}
 """
 
-    context = get_repository_context(query)
-
-    question_type = QUESTION_TYPES[
-        len(previous_questions) % len(QUESTION_TYPES)
-    ]
-
-    ADAPTATION = {
-        "increase_difficulty": """
-The candidate performed strongly on the previous question.
-
-Increase the technical depth of this question.
-Explore deeper reasoning, trade-offs, edge cases,
-performance, scalability, architecture, or failure scenarios.
-
-Do not make the question unnecessarily difficult.
-It should still be grounded in the candidate's project.
-""",
-
-        "decrease_difficulty": """
-The candidate struggled with the previous question.
-
-Make this question more approachable.
-Focus on fundamental understanding of the actual
-implementation and project.
-
-Do not make the candidate feel penalized.
-Do not ask an advanced architecture question.
-""",
-
-        "probe_reasoning": """
-The candidate appears to understand how the implementation works,
-but did not demonstrate strong technical reasoning.
-
-Do not simply increase the difficulty.
-
-Instead, ask about WHY the candidate chose the approach,
-what trade-offs it has, what limitations it has,
-or what alternative they could have used.
-""",
-
-        "maintain_difficulty": """
-The candidate demonstrated an appropriate level of understanding.
-
-Maintain approximately the same difficulty while exploring
-another technical aspect of the project.
-"""
-    }
-
-    adaptation = ADAPTATION.get(
-        strategy,
-        ADAPTATION["maintain_difficulty"]
+    context = get_repository_context(
+        query
     )
 
+    question_type = QUESTION_TYPES[
+        len(previous_questions)
+        % len(QUESTION_TYPES)
+    ]
+
     prompt = f"""
-You are a senior software engineer conducting a realistic technical
-interview about the candidate's own GitHub project.
+You are a senior software engineer conducting a realistic
+one-on-one technical interview about the candidate's own
+GitHub project.
+
+The candidate explicitly selected:
 
 DIFFICULTY:
 {difficulty}
@@ -324,19 +381,55 @@ DIFFICULTY:
 DIFFICULTY PROFILE:
 {DIFFICULTY_PROFILE[difficulty]}
 
-ADAPTIVE INTERVIEW STRATEGY:
-{adaptation}
+==================================================
+CRITICAL DIFFICULTY RULE
+==================================================
 
-TARGET AREA:
+The candidate selected "{difficulty}".
+
+The difficulty is PERMANENTLY LOCKED for this interview.
+
+You MUST keep this question at exactly the
+"{difficulty}" difficulty level.
+
+NEVER increase the difficulty.
+
+NEVER decrease the difficulty.
+
+Do not introduce concepts that belong to a higher
+difficulty level.
+
+Do not make the question harder because the candidate
+performed well.
+
+Do not make the question easier because the candidate
+performed poorly.
+
+You may adapt the TOPIC based on the conversation,
+but you MUST NOT change the difficulty.
+
+==================================================
+TARGET AREA
+==================================================
+
 {question_type}
 
-REPOSITORY CONTEXT:
+==================================================
+REPOSITORY CONTEXT
+==================================================
+
 {context}
 
-PREVIOUS INTERVIEW:
+==================================================
+PREVIOUS INTERVIEW
+==================================================
+
 {history_text}
 
-PREVIOUS MAIN QUESTIONS:
+==================================================
+PREVIOUS MAIN QUESTIONS
+==================================================
+
 {previous_text}
 
 Generate the next MAIN interview question.
@@ -347,25 +440,31 @@ RULES:
 - Keep it conversational.
 - Ask about something that has not already been covered.
 - Build naturally on the previous conversation when appropriate.
-- Follow the adaptive interview strategy above.
+- Keep the exact selected difficulty.
 - Do not repeat or rephrase an earlier question.
 - Do not ask multiple questions.
 - Do not ask syntax or memorization questions.
 - Do not ask CSS or visual styling questions.
 - Do not give feedback.
 - Do not give the answer.
-- Do not mention "provided code" or "retrieved context".
-- Do not mention the adaptive strategy.
+- Do not mention "provided code".
+- Do not mention "retrieved context".
+- Do not mention difficulty adaptation.
 - Do not sound like a quiz.
 - Return ONLY the question.
 
-The candidate should feel like they are speaking with an experienced
-software engineer sitting across from them.
+The candidate should feel like they are speaking with
+an experienced software engineer sitting across from them.
 """
 
     return clean_question(
         generate_response(prompt)
     )
+
+
+# ============================================================
+# CONDUCT TURN
+# ============================================================
 
 def conduct_turn(
     difficulty,
@@ -374,18 +473,27 @@ def conduct_turn(
     current_record,
     follow_up_count
 ):
+
     """
-    Evaluate the candidate's latest answer internally and decide
-    what the interviewer should do next.
+    Evaluate the candidate's latest answer internally
+    and decide what the interviewer should do next.
     """
 
-    current_answer = current_record["pending_answer"]
+    current_answer = (
+        current_record["pending_answer"]
+    )
 
-    previous_history = format_history(history)
+    previous_history = format_history(
+        history
+    )
 
     context = get_repository_context(
         current_prompt
     )
+
+    # --------------------------------------------
+    # Follow-up limit
+    # --------------------------------------------
 
     if follow_up_count >= 2:
 
@@ -393,93 +501,169 @@ def conduct_turn(
 The maximum number of follow-ups has been reached.
 
 Evaluate the candidate's answer and finish this topic.
+
 Do not ask another follow-up.
 """
 
     else:
 
         follow_up_rule = """
-After evaluating the candidate's answer, choose the most appropriate
-next action:
+After evaluating the candidate's answer,
+choose the most appropriate next action.
 
 REACT:
+
 The answer contains something worth exploring.
+
 Ask ONE focused follow-up.
 
+The follow-up MUST remain at the same difficulty
+level selected by the candidate.
+
 HINT:
-The candidate is clearly stuck or has barely attempted the answer.
+
+The candidate is clearly stuck or has barely
+attempted the answer.
+
 Give a subtle hint without revealing the answer.
 
+The hint must not change the difficulty level.
+
 EVALUATE:
+
 The candidate has demonstrated enough understanding.
+
 Finish this topic and move to another main question.
 """
 
     prompt = f"""
-You are a senior software engineer conducting a real technical interview.
+You are a senior software engineer conducting a real
+technical interview.
 
 You are sitting across from the candidate.
 
-DIFFICULTY:
+==================================================
+SELECTED DIFFICULTY
+==================================================
+
 {difficulty}
 
 DIFFICULTY PROFILE:
 {DIFFICULTY_PROFILE[difficulty]}
 
-CURRENT INTERVIEWER PROMPT:
+IMPORTANT:
+
+The candidate selected "{difficulty}".
+
+This difficulty is LOCKED.
+
+Any follow-up question you generate MUST remain
+at exactly this difficulty level.
+
+Do not increase the difficulty.
+
+Do not decrease the difficulty.
+
+==================================================
+CURRENT INTERVIEWER PROMPT
+==================================================
+
 {current_prompt}
 
-CANDIDATE'S LATEST ANSWER:
+==================================================
+CANDIDATE'S LATEST ANSWER
+==================================================
+
 {current_answer}
 
-PREVIOUS INTERVIEW:
+==================================================
+PREVIOUS INTERVIEW
+==================================================
+
 {previous_history}
 
-REPOSITORY CONTEXT:
+==================================================
+REPOSITORY CONTEXT
+==================================================
+
 {context}
+
+==================================================
+INTERVIEW ACTION
+==================================================
 
 {follow_up_rule}
 
-FIRST, INTERNALLY EVALUATE THE CANDIDATE'S LATEST ANSWER.
+==================================================
+INTERNAL EVALUATION
+==================================================
+
+FIRST, INTERNALLY EVALUATE THE CANDIDATE'S
+LATEST ANSWER.
 
 CORRECTNESS:
+
 How technically correct is the answer?
 
 CLARITY:
-How clearly did the candidate communicate their understanding?
+
+How clearly did the candidate communicate
+their understanding?
 
 DEPTH:
-How deeply did the candidate understand the underlying implementation
-and reasoning?
+
+How deeply did the candidate understand
+the underlying implementation and reasoning?
 
 SCORING:
 
 0-2 = incorrect or no meaningful understanding
+
 3-4 = weak / significant misunderstanding
+
 5-6 = partially correct / basic understanding
+
 7-8 = mostly correct and solid
+
 9-10 = excellent and technically deep
 
-If the candidate says "I don't know", "I'm not sure", or gives no
-meaningful attempt, score the answer 0 for correctness, clarity and depth.
+If the candidate says:
+
+"I don't know"
+
+"I'm not sure"
+
+or gives no meaningful attempt,
+
+score the answer 0 for correctness,
+clarity and depth.
 
 Then choose exactly ONE action.
 
 REACT:
-Use when the answer is interesting but deserves one deeper question.
+
+Use when the answer is interesting but deserves
+one deeper question.
 
 HINT:
+
 Use when the candidate is clearly stuck.
 
 EVALUATE:
-Use when the answer is sufficient and the topic should end.
+
+Use when the answer is sufficient and the topic
+should end.
 
 IMPORTANT:
-The candidate will NOT see the scores or evaluation right now.
 
-The candidate should only see the natural interviewer message.
+The candidate will NOT see the scores or evaluation
+right now.
+
+The candidate should only see the natural
+interviewer message.
 
 The interviewer should sound:
+
 - Calm
 - Curious
 - Experienced
@@ -491,6 +675,9 @@ Do not give praise just for the sake of praise.
 
 Do not reveal the correct answer.
 
+Any follow-up must remain at the selected
+difficulty level.
+
 Return EXACTLY this format:
 
 TYPE: react/hint/evaluate
@@ -498,12 +685,15 @@ TYPE: react/hint/evaluate
 MESSAGE: <what the candidate should hear>
 
 CORRECTNESS: <0-10>
+
 CORRECTNESS_REASON: <specific evidence from the answer>
 
 CLARITY: <0-10>
+
 CLARITY_REASON: <specific evidence from the answer>
 
 DEPTH: <0-10>
+
 DEPTH_REASON: <specific evidence from the answer>
 
 WHAT_RIGHT: <what the candidate demonstrated correctly>
@@ -513,7 +703,13 @@ WHAT_MISSED: <what the candidate failed to demonstrate>
 Return nothing else.
 """
 
-    raw = generate_response(prompt).strip()
+    raw = generate_response(
+        prompt
+    ).strip()
+
+    # --------------------------------------------
+    # Extract action
+    # --------------------------------------------
 
     turn_type = extract_field(
         raw,
@@ -526,9 +722,15 @@ Return nothing else.
         "hint",
         "evaluate"
     ]:
+
         turn_type = "evaluate"
 
+    # --------------------------------------------
+    # Return result
+    # --------------------------------------------
+
     return {
+
         "type": turn_type,
 
         "message": extract_field(
@@ -537,6 +739,7 @@ Return nothing else.
         ),
 
         "evaluation": {
+
             "correctness": extract_score(
                 raw,
                 "CORRECTNESS"
@@ -580,19 +783,36 @@ Return nothing else.
     }
 
 
+# ============================================================
+# FINAL FEEDBACK
+# ============================================================
+
 def generate_final_feedback(
     difficulty,
     history
 ):
 
-    interview_text = format_history(history)
+    interview_text = format_history(
+        history
+    )
 
     prompt = f"""
-You are a senior technical interviewer writing the final report for a
-completed project-based technical interview.
+You are a senior technical interviewer writing the final
+report for a completed project-based technical interview.
 
 DIFFICULTY:
 {difficulty}
+
+IMPORTANT:
+
+The candidate completed the interview at the selected
+"{difficulty}" difficulty level.
+
+Evaluate the candidate according to the expectations
+of this difficulty level.
+
+Do not compare the candidate against a different
+difficulty level.
 
 NUMBER OF MAIN QUESTIONS:
 {len(history)}
@@ -602,15 +822,16 @@ COMPLETE INTERVIEW RECORD:
 
 The candidate has now completed the interview.
 
-This is the ONLY point at which detailed feedback should be shown.
+This is the ONLY point at which detailed feedback
+should be shown.
 
-Evaluate the candidate using the stored evaluations and the actual
-answers.
+Evaluate the candidate using the stored evaluations
+and the actual answers.
 
 Do not invent strengths or weaknesses.
 
-Every important assessment must be supported by evidence from the
-candidate's answers.
+Every important assessment must be supported by
+evidence from the candidate's answers.
 
 Do not judge grammar or minor wording mistakes.
 
@@ -623,26 +844,37 @@ Distinguish between:
 - Engineering reasoning
 - Ability to discuss trade-offs
 
-Calculate the overall assessment from the actual interview performance.
+Calculate the overall assessment from the actual
+interview performance.
 
 Return EXACTLY:
 
 OVERALL_SCORE: <0-10>
 
 TECHNICAL_UNDERSTANDING: <0-10>
-TECHNICAL_REASON: <specific evidence-based explanation>
+
+TECHNICAL_REASON:
+<specific evidence-based explanation>
 
 CODE_UNDERSTANDING: <0-10>
-CODE_REASON: <specific evidence-based explanation>
+
+CODE_REASON:
+<specific evidence-based explanation>
 
 PROBLEM_SOLVING: <0-10>
-PROBLEM_SOLVING_REASON: <specific evidence-based explanation>
+
+PROBLEM_SOLVING_REASON:
+<specific evidence-based explanation>
 
 ENGINEERING_REASONING: <0-10>
-ENGINEERING_REASONING_REASON: <specific evidence-based explanation>
+
+ENGINEERING_REASONING_REASON:
+<specific evidence-based explanation>
 
 DEPTH: <0-10>
-DEPTH_REASON: <specific evidence-based explanation>
+
+DEPTH_REASON:
+<specific evidence-based explanation>
 
 STRENGTHS:
 <specific evidence-based strengths>
@@ -659,9 +891,12 @@ FINAL_ASSESSMENT:
 Do not add anything else.
 """
 
-    raw = generate_response(prompt).strip()
+    raw = generate_response(
+        prompt
+    ).strip()
 
     return {
+
         "overall_score": extract_score(
             raw,
             "OVERALL_SCORE"
@@ -737,31 +972,3 @@ Do not add anything else.
             "FINAL_ASSESSMENT"
         )
     }
-
-def determine_strategy(evaluation):
-
-    correctness = evaluation["correctness"]
-    clarity = evaluation["clarity"]
-    depth = evaluation["depth"]
-
-    average = (
-        correctness +
-        clarity +
-        depth
-    ) / 3
-
-    # Candidate understands the implementation,
-    # but does not demonstrate strong reasoning.
-    if correctness >= 7 and depth <= 5:
-        return "probe_reasoning"
-
-    # Candidate performed very strongly.
-    if average >= 8:
-        return "increase_difficulty"
-
-    # Candidate is struggling significantly.
-    if average <= 4:
-        return "decrease_difficulty"
-
-    # Candidate is performing at an appropriate level.
-    return "maintain_difficulty"
