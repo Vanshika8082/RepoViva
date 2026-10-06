@@ -1,63 +1,136 @@
-RepoViva
-AI-powered technical interviews based on your own GitHub projects.
+# RepoViva
 
-RepoViva is an AI-powered technical interview preparation platform that analyzes a user's GitHub repository and generates a realistic, project-specific technical interview.
-Instead of asking generic interview questions, RepoViva understands the candidate's actual codebase and asks questions based on their implementation, architecture, technologies, and technical decisions.
-🚀 Project Overview
-Preparing for technical interviews often means practicing generic questions that may not be related to the projects you actually built.
-RepoViva takes a different approach.
-The platform:
-1. Fetches a GitHub repository
-2. Filters and cleans relevant source files
-3. Converts the code into LangChain documents
-4. Splits the code into chunks
-5. Generates embeddings
-6. Stores code chunks and embeddings in MongoDB Atlas
-7. Uses MongoDB Vector Search for semantic retrieval
-8. Generates a technical project summary
-9. Generates project-specific interview questions using Groq
-10. Conducts a one-question-at-a-time AI interview
-11. Evaluates candidate answers internally
-12. Generates detailed final interview feedback
-The goal is to make the interview feel like a conversation with a real technical interviewer who has actually studied your project.
-🧠 How RepoViva Works
-                GitHub Repository
-                       │
-                       ▼
-               Repository Fetching
-                       │
-                       ▼
-                File Filtering
-                       │
-                       ▼
-              LangChain Documents
-                       │
-                       ▼
-                    Chunking
-                       │
-                       ▼
-                  Embeddings
-                       │
-                       ▼
-                MongoDB Atlas
-                       │
-                       ▼
-             MongoDB Vector Search
-                       │
-                       ▼
-             Relevant Code Retrieval
-                       │
-                       ▼
-              Project Understanding
-                       │
-                       ▼
-            Project-Specific Questions
-                       │
-                       ▼
-              AI Technical Interview
-                       │
-                       ▼
-             Internal Answer Evaluation
-                       │
-                       ▼
-                Final Feedback
+> **AI-powered technical interviews based on your own GitHub projects.**
+
+RepoViva is an AI-powered interview preparation platform that analyzes your GitHub repository and generates **project-specific technical interview questions** based on your actual code, architecture, and technical decisions.
+
+## 🚀 How It Works
+
+```text
+GitHub Repository
+       ↓
+File Filtering & Processing
+       ↓
+Code Chunking
+       ↓
+Embeddings
+       ↓
+MongoDB Vector Search
+       ↓
+Relevant Code Retrieval
+       ↓
+LLM
+       ↓
+Project-Specific Interview
+       ↓
+Answer Evaluation
+       ↓
+Final Feedback
+```
+
+## ✨ Features
+
+- 🔗 Analyze GitHub repositories
+- 🧹 Filter irrelevant files and extract notebook code
+- 🧩 Process code using LangChain
+- 🔎 Semantic code search with embeddings
+- 🗄️ MongoDB Atlas Vector Search
+- 🤖 Groq-powered LLM interview generation
+- 🎯 Easy, Medium, and Hard difficulty levels
+- 💬 One-question-at-a-time interview experience
+- 🔄 Context-aware follow-up questions
+- 📊 Technical answer evaluation
+- 📝 Detailed final interview feedback
+
+## 🛠️ Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| Python | Application logic |
+| LangChain | RAG & document processing |
+| Sentence Transformers | Code embeddings |
+| MongoDB Atlas | Vector database |
+| MongoDB Vector Search | Semantic retrieval |
+| Groq | LLM inference |
+| GPT-OSS-20B | Interview & analysis |
+| PyGithub | GitHub repository fetching |
+
+## ⚙️ Setup
+
+### 1. Clone the repository
+
+```bash
+git clone <your-repository-url>
+cd RepoViva
+```
+
+### 2. Create a virtual environment
+
+```bash
+python -m venv venv
+```
+
+Activate it:
+
+```bash
+# Windows
+venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Configure environment variables
+
+Create a `.env` file:
+
+```env
+GITHUB_TOKEN=your_github_token
+MONGODB_URI=your_mongodb_connection_string
+GROQ_API_KEY=your_groq_api_key
+```
+
+## 🗄️ MongoDB
+
+RepoViva stores code chunks and their embeddings in MongoDB Atlas.
+
+The Vector Search index uses:
+
+```text
+Dimensions: 384
+Similarity: cosine
+```
+
+## 📌 Development Status
+
+### Completed
+
+- [x] GitHub repository processing
+- [x] Code filtering and chunking
+- [x] Embeddings
+- [x] MongoDB Vector Search
+- [x] RAG-based retrieval
+- [x] Project summaries
+- [x] Interview question generation
+- [x] Answer evaluation
+- [x] Follow-up questions
+- [x] Final interview feedback
+
+### In Progress
+
+- [ ] Voice interviews
+- [ ] Frontend UI
+- [ ] Interview analytics
+- [ ] Production optimization
+
+## 🎯 Vision
+
+RepoViva aims to make technical interview preparation more realistic by interviewing developers about **the projects they actually built**, rather than relying only on generic interview questions.
+
+> **Your code. Your project. Your interview.**
