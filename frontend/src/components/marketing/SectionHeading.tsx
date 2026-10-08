@@ -1,4 +1,4 @@
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/Reveal";
 
 export function SectionHeading({
   eyebrow,

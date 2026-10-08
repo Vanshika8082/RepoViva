@@ -1,5 +1,5 @@
 import { GitBranch, ScanSearch, MessagesSquare, ClipboardCheck } from "lucide-react";
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/Reveal";
 import { SectionHeading } from "./SectionHeading";
 
 const steps = [

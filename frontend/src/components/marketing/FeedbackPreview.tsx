@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from "motion/react";
 import { Check, ArrowUpRight, BookOpen } from "lucide-react";
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/Reveal";
 import { SectionHeading } from "./SectionHeading";
 
 const EASE = [0.22, 1, 0.36, 1] as const;

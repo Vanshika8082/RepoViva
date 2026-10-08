@@ -6,7 +6,7 @@ import {
   EyeOff,
   SlidersHorizontal,
 } from "lucide-react";
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/Reveal";
 import { SectionHeading } from "./SectionHeading";
 
 const features = [

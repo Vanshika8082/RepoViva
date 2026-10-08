@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/Reveal";
 
 export function FinalCTA() {
   return (

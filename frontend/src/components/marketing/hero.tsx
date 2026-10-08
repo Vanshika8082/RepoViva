@@ -19,7 +19,7 @@ const copyItem: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.7, ease: EASE },
+    transition: { duration: 0.6, ease: EASE },
   },
 };
 
@@ -34,7 +34,7 @@ const previewVariant: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.9, delay: 0.25, ease: EASE },
+    transition: { duration: 0.7, delay: 0.25, ease: EASE },
   },
 };
 
