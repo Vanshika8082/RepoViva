@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export default function Navbar() {
+export function Navbar() {
   return (
     <header className="border-b border-white/[0.06]">
       <div className="container-page flex h-16 items-center justify-between">
