@@ -198,18 +198,21 @@ export default function StartPage() {
       setStatus("analyzing");
 
       const analysisData = await post<{
-        repo_id: string;
-        owner: string;
-        name: string;
-        summary: string;
-        tech_stack?: string[];
-      }>(
-        ANALYZE_PATH,
-        {
-          repo_url: repo.url,
-        },
-        controller.signal,
-      );
+  status: string;
+  repository_url: string;
+  files_found: number;
+  documents_created: number;
+  project_summary: string;
+  message: string;
+}>(
+  ANALYZE_PATH,
+  {
+    repo_url: repo.url,
+  },
+  controller.signal,
+);
+
+console.log("Repository analysis response:", analysisData);
 
       if (controller.signal.aborted) return;
 
@@ -220,27 +223,53 @@ export default function StartPage() {
        */
       setStatus("starting");
 
-      const interviewData = await post<{
-        session_id: string;
-      }>(
-        START_PATH,
-        {
-          repo_id: analysisData.repo_id,
-          difficulty,
-          num_questions: questionCount,
-        },
-        controller.signal,
-      );
+      
+const interviewResponse = await fetch(
+  `${API_URL}${START_PATH}`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      repo_url: repo.url,
+      difficulty,
+      num_questions: Number(questionCount),
+    }),
+    signal: controller.signal,
+  },
+);
 
-      if (controller.signal.aborted) return;
+const data = await interviewResponse.json();
 
-      /*
-       * STEP 3
-       * Enter the actual interview.
-       */
-      router.push(
-        `/interview/${interviewData.session_id}`,
-      );
+if (!interviewResponse.ok) {
+  console.error("Interview request failed:", data);
+
+  const detail = data.detail;
+  const message = Array.isArray(detail)
+    ? detail.map((e: { msg: string }) => e.msg).join(", ")
+    : typeof detail === "string"
+      ? detail
+      : "Failed to start interview";
+
+  throw new Error(message);
+}
+
+console.log(data);
+
+if (controller.signal.aborted) return;
+
+console.log("Interview API response:", data);
+
+if (typeof data.session_id !== "string" || !data.session_id) {
+  setError(
+    "The backend accepted your interview settings, but interview session creation is not connected yet."
+  );
+  setStatus("idle");
+  return;
+}
+
+router.push(`/interview/${data.session_id}`);
     } catch (error) {
       if (
         error instanceof DOMException &&
