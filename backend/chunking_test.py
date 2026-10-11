@@ -3,7 +3,7 @@ from document_processor import create_documents
 from chunking import chunk_documents
 
 
-repo_url = "https://github.com/Vanshika8082/To-Do-List"
+repo_url = input("Enter the GitHub repository URL: ").strip()
 
 files = fetch_repo(repo_url)
 

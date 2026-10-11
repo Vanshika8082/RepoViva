@@ -16,8 +16,11 @@ def search_similar_chunks(query, limit=5):
                 "index": "vector_index",
                 "path": "embedding",
                 "queryVector": query_vector,
-                "numCandidates": 50,
-                "limit": limit
+                "numCandidates": 100,
+                "limit": limit,
+                "filter": {
+                    "repo_url": normalized_repo_url
+                }
             }
         },
         {
