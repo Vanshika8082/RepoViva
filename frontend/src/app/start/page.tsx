@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useRef, useState } from "react";
@@ -7,7 +8,6 @@ import {
   AlertCircle,
   ArrowRight,
   Check,
-  FileCode2,
   Loader2,
   Lock,
   Sparkles,
@@ -43,8 +43,6 @@ const difficulties: {
     description: "Deep reasoning and challenging edge cases",
   },
 ];
-
-// const [questionCount, setQuestionCount] = useState(5);
 
 type Analysis = {
   repoId: string;
@@ -111,7 +109,7 @@ function parseGitHubRepo(input: string) {
   let owner: string | undefined;
   let name: string | undefined;
 
-  // owner/repo
+  // Support owner/repository input.
   if (!value.includes("github.com") && !value.includes("://")) {
     const short = value.match(/^([\w.-]+)\/([\w.-]+)$/);
 
@@ -125,9 +123,7 @@ function parseGitHubRepo(input: string) {
       );
 
       if (
-        !["github.com", "www.github.com"].includes(
-          url.hostname,
-        )
+        !["github.com", "www.github.com"].includes(url.hostname)
       ) {
         return null;
       }
@@ -158,9 +154,8 @@ export default function StartPage() {
   const [difficulty, setDifficulty] =
     useState<Difficulty>("medium");
 
-  const [questionCount, setQuestionCount] = useState(5);
-
   const [error, setError] = useState<string | null>(null);
+
   const [status, setStatus] = useState<
     "idle" | "analyzing" | "starting"
   >("idle");
@@ -170,10 +165,9 @@ export default function StartPage() {
   const isLoading = status !== "idle";
 
   async function handleStartInterview(
-    event: React.FormEvent,
+    event: React.FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
-
     setError(null);
 
     const repo = parseGitHubRepo(repoInput);
@@ -191,82 +185,89 @@ export default function StartPage() {
     abortRef.current = controller;
 
     try {
-      /*
-       * STEP 1
-       * Analyze the repository.
-       */
+      // Step 1: Analyze the selected repository.
       setStatus("analyzing");
 
       const analysisData = await post<{
-  status: string;
-  repository_url: string;
-  files_found: number;
-  documents_created: number;
-  project_summary: string;
-  message: string;
-}>(
-  ANALYZE_PATH,
-  {
-    repo_url: repo.url,
-  },
-  controller.signal,
-);
+        status: string;
+        repository_url: string;
+        files_found: number;
+        documents_created: number;
+        project_summary: string;
+        message: string;
+      }>(
+        ANALYZE_PATH,
+        {
+          repo_url: repo.url,
+        },
+        controller.signal,
+      );
 
-console.log("Repository analysis response:", analysisData);
+      console.log(
+        "Repository analysis response:",
+        analysisData,
+      );
 
       if (controller.signal.aborted) return;
 
-      /*
-       * STEP 2
-       * Create the interview using the
-       * user's selected configuration.
-       */
+      // Step 2: Start the interview.
+      // The user no longer chooses the number of questions.
+      // The interview uses five main questions by default.
       setStatus("starting");
 
-      
-const interviewResponse = await fetch(`${API_URL}/interviews`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    repo_url: repo.url,
-    difficulty,
-    num_questions: Number(questionCount),
-  }),
-});
+      const interviewResponse = await fetch(
+        `${API_URL}${START_PATH}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            repo_url: repo.url,
+            difficulty,
+            num_questions: 5,
+          }),
+          signal: controller.signal,
+        },
+      );
 
-const responseText = await interviewResponse.text();
+      const responseText = await interviewResponse.text();
 
-let data: {
-  session_id?: string;
-  detail?: string;
-  message?: string;
-} | null = null;
+      let data: {
+        session_id?: string;
+        detail?: string;
+        message?: string;
+      } | null = null;
 
-try {
-  data = responseText ? JSON.parse(responseText) : null;
-} catch {
-  throw new Error(
-    `The backend returned an invalid response (HTTP ${interviewResponse.status}). Check the backend terminal.`
-  );
-}
+      try {
+        data = responseText
+          ? JSON.parse(responseText)
+          : null;
+      } catch {
+        throw new Error(
+          `The backend returned an invalid response (HTTP ${interviewResponse.status}). Check the backend terminal.`,
+        );
+      }
 
-if (!interviewResponse.ok) {
-  throw new Error(
-    data?.detail ||
-      data?.message ||
-      `Interview creation failed (HTTP ${interviewResponse.status}).`
-  );
-}
+      if (!interviewResponse.ok) {
+        throw new Error(
+          data?.detail ||
+            data?.message ||
+            `Interview creation failed (HTTP ${interviewResponse.status}).`,
+        );
+      }
 
-if (!data || typeof data.session_id !== "string" || !data.session_id) {
-  throw new Error(
-    "The backend responded but did not return a session_id. Check the /interviews endpoint in backend/main.py."
-  );
-}
+      if (
+        !data ||
+        typeof data.session_id !== "string" ||
+        !data.session_id
+      ) {
+        throw new Error(
+          "The backend responded but did not return a session_id. Check the /interviews endpoint in backend/main.py.",
+        );
+      }
 
-router.push(`/interview/${data.session_id}`);
+      router.push(`/interview/${data.session_id}`);
     } catch (error) {
       if (
         error instanceof DOMException &&
@@ -337,9 +338,7 @@ router.push(`/interview/${data.session_id}`);
             <section>
               <div className="flex items-start gap-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]">
-                  <FaGithub
-                    size={17}
-                  />
+                  <FaGithub size={17} />
                 </div>
 
                 <div>
@@ -362,9 +361,7 @@ router.push(`/interview/${data.session_id}`);
                       : "border-white/[0.1] focus-within:border-violet-400/60"
                   }`}
                 >
-                  <FaGithub
-                    size={17}
-                  />
+                  <FaGithub size={17} />
 
                   <input
                     type="text"
@@ -415,11 +412,11 @@ router.push(`/interview/${data.session_id}`);
 
               <div
                 role="radiogroup"
+                aria-label="Interview difficulty"
                 className="mt-5 grid gap-3 md:grid-cols-3"
               >
                 {difficulties.map((item) => {
-                  const selected =
-                    difficulty === item.id;
+                  const selected = difficulty === item.id;
 
                   return (
                     <button
@@ -428,9 +425,7 @@ router.push(`/interview/${data.session_id}`);
                       role="radio"
                       aria-checked={selected}
                       disabled={isLoading}
-                      onClick={() =>
-                        setDifficulty(item.id)
-                      }
+                      onClick={() => setDifficulty(item.id)}
                       className={`group rounded-xl border p-4 text-left transition-all ${
                         selected
                           ? "border-violet-500/50 bg-violet-500/[0.07]"
@@ -473,105 +468,7 @@ router.push(`/interview/${data.session_id}`);
               </div>
             </section>
 
-            <div className="my-9 h-px bg-white/[0.07]" />
-
-            {/* Number of questions */}
-<section>
-  <div className="flex items-start justify-between gap-4">
-    <div>
-      <p className="text-sm font-medium text-zinc-200">
-        Number of questions
-      </p>
-
-      <p className="mt-1 text-xs leading-5 text-zinc-600">
-        Choose how many main questions you want in your interview.
-        Follow-up questions don&apos;t count toward this number.
-      </p>
-    </div>
-
-    <span className="shrink-0 text-xs text-zinc-600">
-      1–10
-    </span>
-  </div>
-
-  <div className="mt-5 flex items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.015] p-3">
-    {/* Minus */}
-    <button
-      type="button"
-      disabled={isLoading || questionCount <= 1}
-      onClick={() =>
-        setQuestionCount((current) =>
-          Math.max(1, current - 1),
-        )
-      }
-      className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.02] text-lg text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-      aria-label="Decrease number of questions"
-    >
-      −
-    </button>
-
-    {/* Number */}
-    <div className="text-center">
-      <input
-        type="number"
-        min={1}
-        max={10}
-        value={questionCount}
-        disabled={isLoading}
-        onChange={(event) => {
-          const value = Number(event.target.value);
-
-          if (Number.isNaN(value)) return;
-
-          setQuestionCount(
-            Math.min(10, Math.max(1, value)),
-          );
-        }}
-        className="w-20 bg-transparent text-center text-3xl font-semibold tracking-[-0.03em] text-white outline-none"
-        aria-label="Number of interview questions"
-      />
-
-      <p className="mt-1 text-[11px] text-zinc-600">
-        main questions
-      </p>
-    </div>
-
-    {/* Plus */}
-    <button
-      type="button"
-      disabled={isLoading || questionCount >= 10}
-      onClick={() =>
-        setQuestionCount((current) =>
-          Math.min(10, current + 1),
-        )
-      }
-      className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.02] text-lg text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-      aria-label="Increase number of questions"
-    >
-      +
-    </button>
-  </div>
-
-  {/* Quick choices */}
-  <div className="mt-3 flex items-center justify-center gap-2">
-    {[3, 5, 7, 10].map((count) => (
-      <button
-        key={count}
-        type="button"
-        disabled={isLoading}
-        onClick={() => setQuestionCount(count)}
-        className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
-          questionCount === count
-            ? "bg-violet-500/10 text-violet-300"
-            : "text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-400"
-        }`}
-      >
-        {count}
-      </button>
-    ))}
-  </div>
-</section>
-            {/* Error */}
+            {/* Error message */}
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -5 }}
@@ -587,35 +484,11 @@ router.push(`/interview/${data.session_id}`);
               </motion.div>
             )}
 
-            {/* Summary */}
-            <div className="mt-8 rounded-xl border border-white/[0.06] bg-white/[0.015] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-semibold tracking-[0.14em] text-zinc-600">
-                    INTERVIEW SETUP
-                  </p>
-
-                  <p className="mt-2 text-sm text-zinc-300">
-                    {difficulty.charAt(0).toUpperCase() +
-                      difficulty.slice(1)}{" "}
-                    · {questionCount} questions
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 text-xs text-zinc-600">
-                  <FileCode2 size={13} />
-                  Questions based on your code
-                </div>
-              </div>
-            </div>
-
-            {/* Start */}
+            {/* Start interview */}
             <button
               type="submit"
-              disabled={
-                !repoInput.trim() || isLoading
-              }
-              className="group mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet-500 text-sm font-medium text-white transition-all hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!repoInput.trim() || isLoading}
+              className="group mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet-500 text-sm font-medium text-white transition-all hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {status === "analyzing" ? (
                 <>

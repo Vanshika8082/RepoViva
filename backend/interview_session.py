@@ -19,10 +19,10 @@ class InterviewSession:
                 "Difficulty must be easy, medium, or hard."
             )
 
-        if total_questions < 1:
-            raise ValueError(
-                "Number of questions must be at least 1."
-            )
+        # if total_questions < 1:
+        #     raise ValueError(
+        #         "Number of questions must be at least 1."
+        #     )
 
         # User-selected difficulty is locked
         self.difficulty = difficulty
