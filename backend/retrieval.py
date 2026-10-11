@@ -1,13 +1,20 @@
+
 from embeddings import create_embeddings
 from mongodb import get_database
 
 
-def search_similar_chunks(query, limit=5):
+def search_similar_chunks(query, limit=5, repo_url=None):
+    if not repo_url:
+        raise ValueError(
+            "repo_url is required for repository-specific retrieval."
+        )
+
+    normalized_repo_url = repo_url.strip().rstrip("/")
+
     db = get_database()
     collection = db["code_chunks"]
 
     embedding_model = create_embeddings()
-
     query_vector = embedding_model.embed_query(query)
 
     pipeline = [
@@ -29,6 +36,7 @@ def search_similar_chunks(query, limit=5):
                 "content": 1,
                 "source": 1,
                 "language": 1,
+                "repo_url": 1,
                 "score": {
                     "$meta": "vectorSearchScore"
                 }
@@ -36,6 +44,4 @@ def search_similar_chunks(query, limit=5):
         }
     ]
 
-    results = collection.aggregate(pipeline)
-
-    return list(results)
+    return list(collection.aggregate(pipeline))

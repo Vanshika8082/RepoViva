@@ -1,16 +1,47 @@
+import uuid
+from threading import Lock
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from urllib.parse import urlparse
 
 from repo_fetching import fetch_repo
 from document_processor import create_documents
+from chunking import chunk_documents
+from store_embeddings import store_chunks
 from project_summary import generate_project_summary
-import uuid
-from threading import Lock
-
 from interview_session import InterviewSession
+
+def ingest_repository(repo_url):
+    files = fetch_repo(repo_url)
+
+    if not files:
+        raise HTTPException(
+            status_code=422,
+            detail="No supported source files were found."
+        )
+
+    documents = create_documents(files)
+
+    if not documents:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not create documents from repository files."
+        )
+
+    chunks = chunk_documents(documents)
+
+    if not chunks:
+        raise HTTPException(
+            status_code=422,
+            detail="No code chunks were created."
+        )
+
+    stored_count = store_chunks(chunks, repo_url)
+
+    return len(files), len(documents), len(chunks), stored_count
+
 
 app = FastAPI(title="RepoViva API")
 interview_sessions = {}
@@ -68,38 +99,25 @@ def home():
     return {"message": "RepoViva API is running"}
 
 
+
 @app.post("/repos/analyze")
 def analyze_repository(request: AnalyzeRequest):
     repo_url = validate_github_url(request.repo_url)
 
     try:
-        # 1. Fetch repository source files.
-        files = fetch_repo(repo_url)
+        files_count, docs_count, chunks_count, stored_count = (
+            ingest_repository(repo_url)
+        )
 
-        if not files:
-            raise HTTPException(
-                status_code=422,
-                detail="No supported source files were found."
-            )
-
-        # 2. Convert source files into LangChain Documents.
-        documents = create_documents(files)
-
-        if not documents:
-            raise HTTPException(
-                status_code=422,
-                detail="Could not create documents from repository files."
-            )
-
-        # 3. Generate a summary using your existing retrieval pipeline.
-        # This requires the repository chunks to be stored in MongoDB.
-        summary = generate_project_summary()
+        summary = generate_project_summary(repo_url)
 
         return {
             "status": "success",
             "repository_url": repo_url,
-            "files_found": len(files),
-            "documents_created": len(documents),
+            "files_found": files_count,
+            "documents_created": docs_count,
+            "chunks_created": chunks_count,
+            "chunks_stored": stored_count,
             "project_summary": summary,
             "message": "Repository analysis completed."
         }
@@ -110,7 +128,7 @@ def analyze_repository(request: AnalyzeRequest):
         print(f"Repository analysis failed: {exc}")
         raise HTTPException(
             status_code=500,
-            detail="Repository analysis failed. Check the backend terminal."
+            detail=f"Repository analysis failed: {exc}"
         )
 
 
@@ -125,8 +143,20 @@ class StartInterviewRequest(BaseModel):
 
 
 
+
+import uuid
+from threading import Lock
+
+from interview_session import InterviewSession
+
+interview_sessions = {}
+sessions_lock = Lock()
+
+
+
 @app.post("/interviews")
 def start_interview(request: StartInterviewRequest):
+    repo_url = validate_github_url(request.repo_url)
     difficulty = request.difficulty.lower().strip()
 
     if difficulty not in {"easy", "medium", "hard"}:
@@ -136,9 +166,14 @@ def start_interview(request: StartInterviewRequest):
         )
 
     try:
+        # Ensure the selected repository has chunks stored.
+        ingest_repository(repo_url)
+
+        # The InterviewSession constructor must accept repo_url.
         session = InterviewSession(
             difficulty=difficulty,
             total_questions=request.num_questions,
+            repo_url=repo_url,
         )
 
         first_question = session.start()
@@ -147,13 +182,13 @@ def start_interview(request: StartInterviewRequest):
         with sessions_lock:
             interview_sessions[session_id] = {
                 "session": session,
-                "repository_url": request.repo_url,
+                "repository_url": repo_url,
             }
 
         return {
             "status": "success",
             "session_id": session_id,
-            "repository_url": request.repo_url,
+            "repository_url": repo_url,
             "difficulty": difficulty,
             "num_questions": request.num_questions,
             "question": first_question,
@@ -165,7 +200,7 @@ def start_interview(request: StartInterviewRequest):
         print(f"Failed to start interview: {exc}")
         raise HTTPException(
             status_code=500,
-            detail="Could not start the interview. Check the backend terminal.",
+            detail=f"Could not start interview: {exc}",
         )
 
 

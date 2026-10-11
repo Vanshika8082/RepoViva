@@ -177,29 +177,27 @@ def extract_score(text, field):
 # REPOSITORY CONTEXT
 # ============================================================
 
-def get_repository_context(
-    query,
-    limit=6
-):
+from retrieval import search_similar_chunks
 
+
+def get_repository_context(query, repo_url, limit=6):
     results = search_similar_chunks(
         query,
-        limit=limit
+        limit=limit,
+        repo_url=repo_url
     )
 
-    context = []
+    if not results:
+        return "No code chunks found for this repository."
 
-    for result in results:
-
-        context.append(
-            f"File: {result['source']}\n"
-            f"Language: {result['language']}\n"
-            f"Code:\n{result['content']}"
-        )
-
-    return "\n\n---\n\n".join(
-        context
+    context = "\n\n".join(
+        f"File: {chunk.get('source', 'Unknown')}\n"
+        f"Language: {chunk.get('language', 'Unknown')}\n"
+        f"{chunk['content']}"
+        for chunk in results
     )
+
+    return context
 
 
 # ============================================================
@@ -262,13 +260,16 @@ def format_history(history):
 # ============================================================
 
 def generate_first_question(
-    difficulty
+    difficulty, repo_url
 ):
 
     context = get_repository_context(
+    query=(
         "What are the most important features "
         "and technical components of this project?"
-    )
+    ),
+    repo_url=repo_url
+)
 
     prompt = f"""
 You are a senior software engineer conducting a real one-on-one
@@ -339,7 +340,8 @@ RULES:
 def generate_next_question(
     difficulty,
     history,
-    previous_questions
+    previous_questions,
+    repo_url
 ):
 
     history_text = format_history(
@@ -360,8 +362,9 @@ Previous questions:
 """
 
     context = get_repository_context(
-        query
-    )
+    query=query,
+    repo_url=repo_url
+)
 
     question_type = QUESTION_TYPES[
         len(previous_questions)
@@ -471,7 +474,8 @@ def conduct_turn(
     current_prompt,
     history,
     current_record,
-    follow_up_count
+    follow_up_count,
+    repo_url
 ):
 
     """
@@ -488,8 +492,9 @@ def conduct_turn(
     )
 
     context = get_repository_context(
-        current_prompt
-    )
+    query=current_prompt,
+    repo_url=repo_url
+)
 
     # --------------------------------------------
     # Follow-up limit

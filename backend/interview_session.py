@@ -8,7 +8,7 @@ from interview_engine import (
 
 class InterviewSession:
 
-    def __init__(self, difficulty, total_questions):
+    def __init__(self, difficulty, total_questions, repo_url):
 
         if difficulty not in [
             "easy",
@@ -26,7 +26,7 @@ class InterviewSession:
 
         # User-selected difficulty is locked
         self.difficulty = difficulty
-
+        self.repo_url = repo_url.rstrip("/")
         self.total_questions = total_questions
 
         self.question_number = 0
@@ -50,7 +50,8 @@ class InterviewSession:
         self.questions_asked = 1
 
         question = generate_first_question(
-            self.difficulty
+            difficulty=self.difficulty,
+            repo_url=self.repo_url
         )
 
         self.current_question = question
@@ -77,7 +78,8 @@ class InterviewSession:
             current_prompt=self.current_prompt,
             history=self.history,
             current_record=self.current_record,
-            follow_up_count=self.follow_up_count
+            follow_up_count=self.follow_up_count,
+            repo_url=self.repo_url
         )
 
         # --------------------------------
@@ -99,34 +101,8 @@ class InterviewSession:
         if result["type"] == "react":
 
             self.follow_up_count += 1
-            self.questions_asked += 1
 
             self.current_prompt = result["message"]
-
-            # If this follow-up reaches the requested
-            # total number of questions, finish the interview.
-            if self.questions_asked >= self.total_questions:
-
-                self.history.append(
-                    self.current_record
-                )
-
-                self.completed = True
-
-                feedback = generate_final_feedback(
-                    difficulty=self.difficulty,
-                    history=self.history
-                )
-
-                return {
-                    "type": "complete",
-                    "message": (
-                        "Thanks. That completes the interview. "
-                        "I'll now prepare your final assessment."
-                    ),
-                    "feedback": feedback,
-                    "finished": True
-                }
 
             return {
                 "type": "react",
@@ -192,7 +168,8 @@ class InterviewSession:
         next_question = generate_next_question(
             difficulty=self.difficulty,
             history=self.history,
-            previous_questions=self.previous_questions
+            previous_questions=self.previous_questions,
+            repo_url=self.repo_url
         )
 
         self.current_question = next_question

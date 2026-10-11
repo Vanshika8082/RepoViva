@@ -224,49 +224,46 @@ console.log("Repository analysis response:", analysisData);
       setStatus("starting");
 
       
-const interviewResponse = await fetch(
-  `${API_URL}${START_PATH}`,
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      repo_url: repo.url,
-      difficulty,
-      num_questions: Number(questionCount),
-    }),
-    signal: controller.signal,
+const interviewResponse = await fetch(`${API_URL}/interviews`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
   },
-);
+  body: JSON.stringify({
+    repo_url: repo.url,
+    difficulty,
+    num_questions: Number(questionCount),
+  }),
+});
 
-const data = await interviewResponse.json();
+const responseText = await interviewResponse.text();
 
-if (!interviewResponse.ok) {
-  console.error("Interview request failed:", data);
+let data: {
+  session_id?: string;
+  detail?: string;
+  message?: string;
+} | null = null;
 
-  const detail = data.detail;
-  const message = Array.isArray(detail)
-    ? detail.map((e: { msg: string }) => e.msg).join(", ")
-    : typeof detail === "string"
-      ? detail
-      : "Failed to start interview";
-
-  throw new Error(message);
+try {
+  data = responseText ? JSON.parse(responseText) : null;
+} catch {
+  throw new Error(
+    `The backend returned an invalid response (HTTP ${interviewResponse.status}). Check the backend terminal.`
+  );
 }
 
-console.log(data);
-
-if (controller.signal.aborted) return;
-
-console.log("Interview API response:", data);
-
-if (typeof data.session_id !== "string" || !data.session_id) {
-  setError(
-    "The backend accepted your interview settings, but interview session creation is not connected yet."
+if (!interviewResponse.ok) {
+  throw new Error(
+    data?.detail ||
+      data?.message ||
+      `Interview creation failed (HTTP ${interviewResponse.status}).`
   );
-  setStatus("idle");
-  return;
+}
+
+if (!data || typeof data.session_id !== "string" || !data.session_id) {
+  throw new Error(
+    "The backend responded but did not return a session_id. Check the /interviews endpoint in backend/main.py."
+  );
 }
 
 router.push(`/interview/${data.session_id}`);

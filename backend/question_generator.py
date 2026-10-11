@@ -40,7 +40,7 @@ def generate_question(difficulty, history=None):
         f"that would be suitable for a {difficulty} technical interview."
     )
 
-    results = search_similar_chunks(retrieval_query, limit=6)
+    results = search_similar_chunks(retrieval_query, limit=6, repo_url=repo_url)
 
     context = "\n\n".join(
         f"File: {result['source']}\n"
