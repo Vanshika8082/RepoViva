@@ -4,18 +4,22 @@ import {
   AnimatePresence,
   MotionConfig,
   motion,
+  useInView,
   useReducedMotion,
   type Variants,
 } from "motion/react";
 import { FileCode2, Pause, Play, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaGithub } from "react-icons/fa";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const INTERVAL_MS = 7000;
+const TYPE_SPEED_MS = 18;
 
 const REPOSITORY = "acme / task-manager";
 const DIFFICULTY = "Medium";
+
+const FILL_KEYFRAMES = `@keyframes rv-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }`;
 
 type CodeLine = { text: string; highlight?: boolean };
 
@@ -79,8 +83,7 @@ const previews: Preview[] = [
       { text: "  return db.tasks.findMany({ where: { userId } });", highlight: true },
       { text: "}" },
     ],
-    question:
-      "Your dashboard loads every task for a user in a single query.",
+    question: "Your dashboard loads every task for a user in a single query.",
     followUp: "What happens when one user has 100,000 tasks?",
     answer:
       "I'd add cursor-based pagination and an index on user and created date, so the dashboard only loads the first page of tasks...",
@@ -113,6 +116,43 @@ const itemVariants: Variants = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Small helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+function usePageVisible() {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const update = () => setVisible(!document.hidden);
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+
+  return visible;
+}
+
+function Pulse({
+  play,
+  duration,
+  className,
+}: {
+  play: boolean;
+  duration: number;
+  className: string;
+}) {
+  return (
+    <motion.span
+      animate={play ? { opacity: [0.4, 1, 0.4] } : { opacity: 1 }}
+      transition={
+        play ? { duration, repeat: Infinity, ease: "easeInOut" } : undefined
+      }
+      className={className}
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Typewriter answer                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -142,13 +182,13 @@ function TypedAnswer({
       interval = setInterval(() => {
         i += 1;
         setCount(i);
-        if (i >= text.length && interval) clearInterval(interval);
-      }, 18);
+        if (i >= text.length) clearInterval(interval);
+      }, TYPE_SPEED_MS);
     }, 600);
 
     return () => {
       clearTimeout(start);
-      if (interval) clearInterval(interval);
+      clearInterval(interval);
     };
   }, [active, animate, text]);
 
@@ -210,12 +250,17 @@ export function InterviewPreview() {
   const shouldReduceMotion = useReducedMotion();
   const autoplay = !shouldReduceMotion;
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(rootRef, { amount: 0.25 });
+  const pageVisible = usePageVisible();
+
   const [activeIndex, setActiveIndex] = useState(0);
   const [hoverPaused, setHoverPaused] = useState(false);
   const [focusPaused, setFocusPaused] = useState(false);
   const [userPaused, setUserPaused] = useState(false);
 
-  const paused = hoverPaused || focusPaused || userPaused;
+  const live = inView && pageVisible;
+  const paused = hoverPaused || focusPaused || userPaused || !live;
   const preview = previews[activeIndex];
 
   const advance = () =>
@@ -223,10 +268,10 @@ export function InterviewPreview() {
 
   return (
     <MotionConfig reducedMotion="user">
-      {/* Keyframes for the indicator fill. Move to globals.css if you prefer. */}
-      <style>{`@keyframes rv-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }`}</style>
+      <style>{FILL_KEYFRAMES}</style>
 
       <div
+        ref={rootRef}
         role="region"
         aria-roledescription="carousel"
         aria-label="Interview preview"
@@ -246,8 +291,12 @@ export function InterviewPreview() {
 
         {/* Gradient border + floating shell (never remounts) */}
         <motion.div
-          animate={{ y: [0, -4, 0] }}
-          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+          animate={live ? { y: [0, -4, 0] } : { y: 0 }}
+          transition={
+            live
+              ? { duration: 6, repeat: Infinity, ease: "easeInOut" }
+              : { duration: 0.4 }
+          }
           className="rounded-xl bg-gradient-to-b from-white/[0.18] via-white/[0.04] to-violet-500/30 p-px shadow-2xl shadow-black/40"
         >
           <div className="relative overflow-hidden rounded-[11px] bg-[#0f0f12]">
@@ -289,6 +338,7 @@ export function InterviewPreview() {
               </span>
             </div>
 
+            {/* BODY */}
             <div className="p-6 sm:p-8">
               {/* Interviewer + progress */}
               <div className="mb-6 flex items-center justify-between">
@@ -316,13 +366,11 @@ export function InterviewPreview() {
                   role="img"
                   aria-label={`Question ${activeIndex + 1} of ${previews.length}`}
                 >
-                  {previews.map((_, index) => (
+                  {previews.map((p, index) => (
                     <span
-                      key={index}
+                      key={p.topic}
                       className={`h-1.5 w-6 rounded-full transition-all duration-500 ${
-                        index <= activeIndex
-                          ? "bg-violet-500"
-                          : "bg-zinc-700"
+                        index <= activeIndex ? "bg-violet-500" : "bg-zinc-700"
                       } ${
                         index === activeIndex
                           ? "shadow-[0_0_10px_rgba(139,92,246,0.7)]"
@@ -333,7 +381,7 @@ export function InterviewPreview() {
                 </div>
               </div>
 
-              {/* SLIDES: all stacked in one grid cell, so height = tallest slide */}
+              {/* SLIDES: stacked in one grid cell, so height = tallest slide */}
               <div className="grid">
                 {previews.map((p, index) => {
                   const isActive = index === activeIndex;
@@ -349,7 +397,7 @@ export function InterviewPreview() {
                       initial={false}
                       animate={isActive ? "active" : "inactive"}
                       className={`col-start-1 row-start-1 ${
-                        isActive ? "" : "pointer-events-none"
+                        isActive ? "" : "pointer-events-none select-none"
                       }`}
                     >
                       {/* Code from the repo */}
@@ -392,13 +440,9 @@ export function InterviewPreview() {
                             <span className="text-xs text-zinc-700">
                               Continue your answer
                             </span>
-                            <motion.div
-                              animate={{ opacity: [0.4, 1, 0.4] }}
-                              transition={{
-                                duration: 2,
-                                repeat: Infinity,
-                                ease: "easeInOut",
-                              }}
+                            <Pulse
+                              play={live && isActive}
+                              duration={2}
                               className="h-2 w-2 rounded-full bg-violet-400"
                             />
                           </div>
@@ -413,13 +457,9 @@ export function InterviewPreview() {
             {/* BOTTOM STATUS */}
             <div className="flex items-center justify-between border-t border-white/[0.07] px-6 py-4">
               <div className="flex items-center gap-2">
-                <motion.span
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{
-                    duration: 2.2,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
+                <Pulse
+                  play={live}
+                  duration={2.2}
                   className="h-1.5 w-1.5 rounded-full bg-emerald-400"
                 />
                 <span className="text-xs text-zinc-500">
@@ -432,7 +472,7 @@ export function InterviewPreview() {
           </div>
         </motion.div>
 
-        {/* CAROUSEL INDICATORS (active one fills and drives the autoplay) */}
+        {/* CAROUSEL INDICATORS (the active one fills and drives autoplay) */}
         <div className="relative mt-5 flex items-center justify-center">
           <div className="flex items-center gap-1">
             {previews.map((p, index) => {
