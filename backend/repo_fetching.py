@@ -1,77 +1,149 @@
-import os #to interact with the underlying operating system
-from dotenv import load_dotenv #to load environment variables from a .env file
-from github import Github #to interact with the GitHub API
-import json #to parse JSON data
 
-load_dotenv() #load environment variables from .env file
+# repo_fetching.py
 
-token = os.getenv("GITHUB_TOKEN") #get github token from .env
+import json
+import os
+from pathlib import PurePosixPath
+from urllib.parse import urlparse
 
-if token:
-    g=Github(token) #initialize Github object with token
-else:
-    g=Github() #initialize Github object without token (unauthenticated)
+from dotenv import load_dotenv
+from github import Github
 
-valid_extensions = (
-    ".py", ".ipynb", ".js", ".java", ".cpp", ".c", ".html", ".css", ".ts", ".go", ".rb", ".php", ".rs", ".swift", ".kt", ".m", ".scala", ".sh", ".r", ".pl",
+load_dotenv()
+
+token = os.getenv("GITHUB_TOKEN")
+g = Github(token) if token else Github()
+
+VALID_EXTENSIONS = (
+    ".py", ".ipynb", ".js", ".jsx", ".ts", ".tsx",
+    ".java", ".cpp", ".c", ".h", ".hpp", ".html",
+    ".css", ".go", ".rb", ".php", ".rs", ".swift",
+    ".kt", ".m", ".scala", ".sh", ".r", ".pl",
 )
 
-ignore_folders = (
-    ".github", ".git", "node_modules", "venv", "__pycache__", "dist", "build", "tests", "test", "docs", "examples", "scripts", "config", "configs",
-)
+IGNORE_FOLDERS = {
+    ".github", ".git", "node_modules", "venv", ".venv",
+    "__pycache__", "dist", "build", "tests", "test",
+    "docs", "examples", "scripts", ".next", "coverage",
+}
 
+# Keep the file-fetching behavior focused on source code.
 def extract_ipynb_code(content):
-    """
-    Extract only code cells from Jupyter notebook JSON.
-    """
+    """Extract code cells from a Jupyter notebook."""
     try:
         notebook = json.loads(content)
         code_cells = []
 
         for cell in notebook.get("cells", []):
             if cell.get("cell_type") == "code":
-                code_cells.append("".join(cell.get("source", [])))
+                source = cell.get("source", [])
+                code_cells.append(
+                    "".join(source) if isinstance(source, list) else source
+                )
 
         return "\n\n".join(code_cells)
-
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return ""
 
-def fetch_repo(url):
-    parts=url.strip().split('/') 
-    repo_name=parts[-1] #get the repository name from the URL
-    owner_name=parts[-2] #get the owner name from the URL
 
-    repo=g.get_repo(f"{owner_name}/{repo_name}") 
-    contents = repo.get_contents("")
-    files=[]
+def _parse_repo_url(url):
+    """Accept a GitHub URL or owner/repository."""
+    value = url.strip()
 
-    while contents:
-        file_content=contents.pop(0)
+    if "://" not in value:
+        value = f"https://github.com/{value}"
 
-        #ignoring unwanted files like readme etc
-        if any(folder in file_content.path for folder in ignore_folders):
+    parsed = urlparse(value)
+
+    if parsed.hostname not in {"github.com", "www.github.com"}:
+        raise ValueError("Please provide a valid GitHub repository URL.")
+
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+
+    if len(parts) != 2:
+        raise ValueError(
+            "Use a URL like https://github.com/owner/repository"
+        )
+
+    owner, name = parts
+    if name.endswith(".git"):
+        name = name[:-4]
+
+    return owner, name
+
+
+def get_repository_metadata(url):
+    """
+    Return actual GitHub metadata and repository paths.
+    The paths include manifests and configuration files, not just source code.
+    """
+    owner, name = _parse_repo_url(url)
+    repo = g.get_repo(f"{owner}/{name}")
+
+    tree = repo.get_git_tree(repo.default_branch, recursive=True)
+    paths = []
+
+    for item in tree.tree:
+        if item.type != "blob":
             continue
 
-        if(file_content.type=="dir"):
+        path = item.path
+        parts = PurePosixPath(path).parts
+
+        if any(part in IGNORE_FOLDERS for part in parts):
+            continue
+
+        paths.append(path)
+
+    return {
+        "repository_name": repo.name,
+        "owner": repo.owner.login,
+        "repository_url": repo.html_url.rstrip("/"),
+        "description": repo.description or "",
+        "default_branch": repo.default_branch,
+        "languages": repo.get_languages(),
+        "file_paths": paths,
+    }
+
+
+def fetch_repo(url):
+    """Fetch supported source files, preserving the existing return shape."""
+    owner, name = _parse_repo_url(url)
+    repo = g.get_repo(f"{owner}/{name}")
+
+    contents = list(repo.get_contents(""))
+    files = []
+
+    while contents:
+        file_content = contents.pop(0)
+        parts = PurePosixPath(file_content.path).parts
+
+        if any(part in IGNORE_FOLDERS for part in parts):
+            continue
+
+        if file_content.type == "dir":
             contents.extend(repo.get_contents(file_content.path))
+            continue
 
-        elif file_content.type == "file":
+        if file_content.type != "file":
+            continue
 
-            if file_content.name.endswith(valid_extensions):
-                try:
-                    decoded = file_content.decoded_content.decode("utf-8")
+        if not file_content.name.lower().endswith(VALID_EXTENSIONS):
+            continue
 
-                    # If notebook, extract only code
-                    if file_content.name.endswith(".ipynb"):
-                        decoded = extract_ipynb_code(decoded)
+        try:
+            decoded = file_content.decoded_content.decode("utf-8")
 
-                    if decoded.strip():
-                        files.append({
-                            "filename": file_content.path,
-                            "content": decoded
-                        })
+            if file_content.name.lower().endswith(".ipynb"):
+                decoded = extract_ipynb_code(decoded)
 
-                except Exception:
-                    pass
+            if decoded.strip():
+                files.append({
+                    "filename": file_content.path,
+                    "content": decoded,
+                })
+        except (UnicodeDecodeError, ValueError):
+            # Ignore binary files or files that cannot be decoded as text.
+            continue
+
     return files
