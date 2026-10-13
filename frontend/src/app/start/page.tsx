@@ -8,14 +8,19 @@ import {
   AlertCircle,
   ArrowRight,
   Check,
+  FileCode2,
+  FolderCode,
   Loader2,
   Lock,
   Sparkles,
+  Wrench,
+  RotateCcw,
+  GitBranch,
 } from "lucide-react";
 import { motion } from "motion/react";
 
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 const ANALYZE_PATH = "/repos/analyze";
 const START_PATH = "/interviews";
@@ -44,12 +49,34 @@ const difficulties: {
   },
 ];
 
-type Analysis = {
-  repoId: string;
-  owner: string;
+type ImportantFile = {
+  path: string;
+  purpose: string;
+};
+
+type ComponentInfo = {
   name: string;
-  summary: string;
-  techStack: string[];
+  file: string;
+  type: string;
+};
+
+type RepositoryOverview = {
+  status: string;
+  repository_url: string;
+  repository_name: string;
+  owner: string;
+  description: string;
+  default_branch: string;
+  languages: Record<string, number>;
+  tools_and_frameworks: string[];
+  important_files: ImportantFile[];
+  components: ComponentInfo[];
+  project_summary: string;
+  files_found: number;
+  documents_created: number;
+  chunks_created: number;
+  chunks_stored: number;
+  message: string;
 };
 
 async function post<T>(
@@ -62,17 +89,13 @@ async function post<T>(
   try {
     response = await fetch(`${API_URL}${path}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal,
+      cache: "no-store",
     });
   } catch (error) {
-    if (
-      error instanceof DOMException &&
-      error.name === "AbortError"
-    ) {
+    if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
     }
 
@@ -81,40 +104,33 @@ async function post<T>(
     );
   }
 
+  const data = await response.json().catch(() => null);
+
   if (!response.ok) {
-    let message = "Something went wrong. Please try again.";
+    const detail = data?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(". ")
+          : data?.message;
 
-    try {
-      const data = await response.json();
-      const detail = data?.detail ?? data?.message;
-
-      if (typeof detail === "string") {
-        message = detail;
-      }
-    } catch {
-      // Ignore invalid JSON responses.
-    }
-
-    throw new Error(message);
+    throw new Error(message || "Something went wrong. Please try again.");
   }
 
-  return response.json() as Promise<T>;
+  return data as T;
 }
 
 function parseGitHubRepo(input: string) {
   const value = input.trim();
-
   if (!value) return null;
 
   let owner: string | undefined;
   let name: string | undefined;
 
-  // Support owner/repository input.
   if (!value.includes("github.com") && !value.includes("://")) {
     const short = value.match(/^([\w.-]+)\/([\w.-]+)$/);
-
     if (!short) return null;
-
     [, owner, name] = short;
   } else {
     try {
@@ -122,15 +138,11 @@ function parseGitHubRepo(input: string) {
         value.includes("://") ? value : `https://${value}`,
       );
 
-      if (
-        !["github.com", "www.github.com"].includes(url.hostname)
-      ) {
+      if (!["github.com", "www.github.com"].includes(url.hostname)) {
         return null;
       }
 
-      [owner, name] = url.pathname
-        .split("/")
-        .filter(Boolean);
+      [owner, name] = url.pathname.split("/").filter(Boolean);
     } catch {
       return null;
     }
@@ -138,7 +150,7 @@ function parseGitHubRepo(input: string) {
 
   name = name?.replace(/\.git$/, "");
 
-  if (!owner || !name) return null;
+  if (!owner || !name || name.includes("/")) return null;
 
   return {
     owner,
@@ -147,34 +159,44 @@ function parseGitHubRepo(input: string) {
   };
 }
 
+function formatLabel(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) =>
+    letter.toUpperCase(),
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 export default function StartPage() {
   const router = useRouter();
 
   const [repoInput, setRepoInput] = useState("");
-  const [difficulty, setDifficulty] =
-    useState<Difficulty>("medium");
-
+  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
+  const [overview, setOverview] = useState<RepositoryOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const [status, setStatus] = useState<
     "idle" | "analyzing" | "starting"
   >("idle");
 
   const abortRef = useRef<AbortController | null>(null);
-
   const isLoading = status !== "idle";
 
-  async function handleStartInterview(
+  async function handleAnalyzeRepository(
     event: React.FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
     setError(null);
+    setOverview(null);
 
     const repo = parseGitHubRepo(repoInput);
 
     if (!repo) {
       setError(
-        "Enter a valid GitHub repository, for example github.com/owner/repo",
+        "Enter a valid GitHub repository, for example github.com/owner/repository.",
       );
       return;
     }
@@ -185,355 +207,242 @@ export default function StartPage() {
     abortRef.current = controller;
 
     try {
-      // Step 1: Analyze the selected repository.
       setStatus("analyzing");
 
-      const analysisData = await post<{
-        status: string;
-        repository_url: string;
-        files_found: number;
-        documents_created: number;
-        project_summary: string;
-        message: string;
-      }>(
+      const result = await post<RepositoryOverview>(
         ANALYZE_PATH,
-        {
-          repo_url: repo.url,
-        },
+        { repo_url: repo.url },
         controller.signal,
-      );
-
-      console.log(
-        "Repository analysis response:",
-        analysisData,
       );
 
       if (controller.signal.aborted) return;
 
-      // Step 2: Start the interview.
-      // The user no longer chooses the number of questions.
-      // The interview uses five main questions by default.
-      setStatus("starting");
+// Save the repository analysis and selected difficulty
+// so the overview page can read them.
+sessionStorage.setItem(
+  "repoviva_overview",
+  JSON.stringify({
+    overview: result,
+    difficulty,
+  }),
+);
 
-      const interviewResponse = await fetch(
-        `${API_URL}${START_PATH}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            repo_url: repo.url,
-            difficulty,
-            num_questions: 5,
-          }),
-          signal: controller.signal,
-        },
-      );
-
-      const responseText = await interviewResponse.text();
-
-      let data: {
-        session_id?: string;
-        detail?: string;
-        message?: string;
-      } | null = null;
-
-      try {
-        data = responseText
-          ? JSON.parse(responseText)
-          : null;
-      } catch {
-        throw new Error(
-          `The backend returned an invalid response (HTTP ${interviewResponse.status}). Check the backend terminal.`,
-        );
-      }
-
-      if (!interviewResponse.ok) {
-        throw new Error(
-          data?.detail ||
-            data?.message ||
-            `Interview creation failed (HTTP ${interviewResponse.status}).`,
-        );
-      }
-
-      if (
-        !data ||
-        typeof data.session_id !== "string" ||
-        !data.session_id
-      ) {
-        throw new Error(
-          "The backend responded but did not return a session_id. Check the /interviews endpoint in backend/main.py.",
-        );
-      }
-
-      router.push(`/interview/${data.session_id}`);
-    } catch (error) {
-      if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
-      ) {
-        return;
-      }
+// Navigate to the separate overview page.
+router.push("/overview");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
 
       setError(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong. Please try again.",
+        err instanceof Error ? err.message : "Repository analysis failed.",
+      );
+    } finally {
+      if (!controller.signal.aborted) setStatus("idle");
+    }
+  }
+
+  async function handleStartInterview() {
+    if (!overview || isLoading) return;
+
+    setError(null);
+    setStatus("starting");
+
+    abortRef.current?.abort();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const data = await post<{
+        session_id: string;
+        detail?: string;
+        message?: string;
+      }>(
+        START_PATH,
+        {
+          repo_url: overview.repository_url,
+          difficulty,
+          num_questions: 5,
+        },
+        controller.signal,
       );
 
+      if (controller.signal.aborted) return;
+
+      if (!data.session_id) {
+        throw new Error("The backend did not return an interview session ID.");
+      }
+
+      router.push(`/interview/${encodeURIComponent(data.session_id)}`);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+
+      setError(
+        err instanceof Error ? err.message : "Could not start the interview.",
+      );
       setStatus("idle");
     }
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)]">
-      <div className="container-page">
-        <div className="mx-auto max-w-4xl pb-24 pt-16 sm:pt-20">
-          {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.7,
-              ease: [0.22, 1, 0.36, 1],
-            }}
-            className="text-center"
-          >
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]">
-              <Sparkles
-                size={19}
-                className="text-violet-400"
-              />
+    <main className="min-h-screen bg-[#09090b] text-zinc-100">
+      <div className="mx-auto max-w-4xl px-4 pb-24 pt-12 sm:px-6 sm:pt-16">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center"
+        >
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]">
+            <Sparkles size={19} className="text-violet-400" />
+          </div>
+
+          <p className="mt-6 text-xs font-semibold tracking-[0.16em] text-violet-400">
+            REPOVIVA · REPOSITORY ANALYSIS
+          </p>
+
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-5xl">
+            Let&apos;s talk about your code.
+          </h1>
+
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
+            Enter a GitHub repository to explore its architecture, technologies,
+            important files, and components before your technical interview.
+          </p>
+        </motion.div>
+
+        <motion.form
+          onSubmit={handleAnalyzeRepository}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.5 }}
+          className="mt-10 rounded-2xl border border-white/[0.09] bg-[#0f0f12] p-5 shadow-2xl shadow-black/20 sm:p-8"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]">
+              <FaGithub size={19} />
             </div>
+            <div>
+              <h2 className="text-sm font-medium text-zinc-200">
+                GitHub repository
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Use a public repository URL or owner/repository.
+              </p>
+            </div>
+          </div>
 
-            <p className="mt-6 text-xs font-semibold tracking-[0.16em] text-violet-400">
-              START YOUR INTERVIEW
-            </p>
+          <div className="mt-5 flex items-center rounded-lg border border-white/[0.1] bg-black/20 px-4 focus-within:border-violet-400/60">
+            <span className="shrink-0 text-zinc-400">
+              <FaGithub size={17} />
+            </span>
+            <input
+              type="text"
+              value={repoInput}
+              onChange={(event) => {
+                setRepoInput(event.target.value);
+                setOverview(null);
+                setError(null);
+              }}
+              placeholder="https://github.com/owner/repository"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              disabled={isLoading}
+              className="h-14 min-w-0 flex-1 bg-transparent px-4 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-700 disabled:opacity-50"
+            />
+          </div>
 
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">
-              Let&apos;s talk about your code.
-            </h1>
-
-            <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-zinc-500 sm:text-lg">
-              Tell us which project you want to discuss and
-              choose how challenging you want your interview
-              to be.
-            </p>
-          </motion.div>
-
-          {/* Main form */}
-          <motion.form
-            onSubmit={handleStartInterview}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.7,
-              delay: 0.15,
-              ease: [0.22, 1, 0.36, 1],
-            }}
-            className="mt-12 rounded-2xl border border-white/[0.09] bg-[#0f0f12] p-6 shadow-2xl shadow-black/20 sm:p-8"
-          >
-            {/* Repository */}
-            <section>
-              <div className="flex items-start gap-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]">
-                  <FaGithub size={17} />
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    GitHub repository
-                  </p>
-
-                  <p className="mt-1 text-xs leading-5 text-zinc-600">
-                    Enter the project you want RepoViva to
-                    interview you about.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5">
-                <div
-                  className={`flex items-center rounded-lg border bg-black/20 px-4 transition-colors ${
-                    error
-                      ? "border-red-400/40"
-                      : "border-white/[0.1] focus-within:border-violet-400/60"
-                  }`}
-                >
-                  <FaGithub size={17} />
-
-                  <input
-                    type="text"
-                    value={repoInput}
-                    onChange={(event) => {
-                      setRepoInput(event.target.value);
-                      setError(null);
-                    }}
-                    placeholder="https://github.com/owner/repository"
-                    autoComplete="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    disabled={isLoading}
-                    className="h-14 min-w-0 flex-1 bg-transparent px-4 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-700 disabled:opacity-50"
-                  />
-                </div>
-
-                <p className="mt-2 text-xs text-zinc-700">
-                  You can also enter{" "}
-                  <span className="font-mono text-zinc-500">
-                    owner/repository
-                  </span>
+          <div className="mt-8">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium text-zinc-200">
+                  Interview difficulty
+                </h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Your selected level stays locked throughout the interview.
                 </p>
               </div>
-            </section>
+              <Lock size={14} className="text-zinc-600" />
+            </div>
 
-            <div className="my-9 h-px bg-white/[0.07]" />
-
-            {/* Difficulty */}
-            <section>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    Interview level
-                  </p>
-
-                  <p className="mt-1 text-xs leading-5 text-zinc-600">
-                    This level stays locked for the entire
-                    interview.
-                  </p>
-                </div>
-
-                <Lock
-                  size={14}
-                  className="mt-1 text-zinc-700"
-                />
-              </div>
-
-              <div
-                role="radiogroup"
-                aria-label="Interview difficulty"
-                className="mt-5 grid gap-3 md:grid-cols-3"
-              >
-                {difficulties.map((item) => {
-                  const selected = difficulty === item.id;
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      disabled={isLoading}
-                      onClick={() => setDifficulty(item.id)}
-                      className={`group rounded-xl border p-4 text-left transition-all ${
-                        selected
-                          ? "border-violet-500/50 bg-violet-500/[0.07]"
-                          : "border-white/[0.07] bg-white/[0.015] hover:border-white/[0.14] hover:bg-white/[0.025]"
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p
-                          className={`text-sm font-medium ${
-                            selected
-                              ? "text-white"
-                              : "text-zinc-300"
-                          }`}
-                        >
-                          {item.label}
-                        </p>
-
-                        <span
-                          className={`flex h-5 w-5 items-center justify-center rounded-full border ${
-                            selected
-                              ? "border-violet-400 bg-violet-500"
-                              : "border-zinc-700"
-                          }`}
-                        >
-                          {selected && (
-                            <Check
-                              size={12}
-                              className="text-white"
-                            />
-                          )}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-xs leading-5 text-zinc-600">
-                        {item.description}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* Error message */}
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-6 flex items-start gap-2 rounded-lg border border-red-400/10 bg-red-400/[0.04] p-3 text-sm text-red-300"
-              >
-                <AlertCircle
-                  size={15}
-                  className="mt-0.5 shrink-0"
-                />
-
-                <span>{error}</span>
-              </motion.div>
-            )}
-
-            {/* Start interview */}
-            <button
-              type="submit"
-              disabled={!repoInput.trim() || isLoading}
-              className="group mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet-500 text-sm font-medium text-white transition-all hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+            <div
+              role="radiogroup"
+              aria-label="Interview difficulty"
+              className="mt-4 grid gap-3 sm:grid-cols-3"
             >
-              {status === "analyzing" ? (
-                <>
-                  <Loader2
-                    size={16}
-                    className="animate-spin motion-reduce:animate-none"
-                  />
-                  Analyzing your repository…
-                </>
-              ) : status === "starting" ? (
-                <>
-                  <Loader2
-                    size={16}
-                    className="animate-spin motion-reduce:animate-none"
-                  />
-                  Preparing your interview…
-                </>
-              ) : (
-                <>
-                  Start my interview
-                  <ArrowRight
-                    size={16}
-                    className="transition-transform duration-200 group-hover:translate-x-0.5"
-                  />
-                </>
-              )}
-            </button>
-          </motion.form>
+              {difficulties.map((item) => {
+                const selected = difficulty === item.id;
 
-          {/* Bottom reassurance */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{
-              duration: 0.6,
-              delay: 0.5,
-            }}
-            className="mt-6 flex justify-center"
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={isLoading}
+                    onClick={() => setDifficulty(item.id)}
+                    className={`rounded-xl border p-4 text-left transition ${
+                      selected
+                        ? "border-violet-500/50 bg-violet-500/[0.08]"
+                        : "border-white/[0.07] bg-white/[0.015] hover:border-white/[0.14]"
+                    } disabled:opacity-60`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{item.label}</span>
+                      <span
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border ${
+                          selected
+                            ? "border-violet-400 bg-violet-500"
+                            : "border-zinc-700"
+                        }`}
+                      >
+                        {selected && <Check size={12} />}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      {item.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-6 flex items-start gap-2 rounded-lg border border-red-400/10 bg-red-400/[0.04] p-3 text-sm text-red-300"
+            >
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+
+          <button
+            type="submit"
+            disabled={!repoInput.trim() || isLoading}
+            className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet-500 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <p className="text-xs text-zinc-700">
-              Your interview will be generated specifically
-              from the repository you provide.
-            </p>
-          </motion.div>
-        </div>
+            {status === "analyzing" ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Analyzing repository...
+              </>
+            ) : (
+              <>
+                {overview ? "Analyze another repository" : "Analyze repository"}
+                <ArrowRight size={16} />
+              </>
+            )}
+          </button>
+        </motion.form>
+
+
+        <p className="mt-6 text-center text-xs leading-5 text-zinc-600">
+          RepoViva generates repository-specific interview questions and
+          evaluates your answers after the interview.
+        </p>
       </div>
     </main>
   );
