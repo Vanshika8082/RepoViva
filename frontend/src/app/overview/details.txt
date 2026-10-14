@@ -1,2 +1,1 @@
-RepoViva is an AI-powered technical interview preparation platform that analyzes GitHub repositories to identify project details, programming languages, tools, frameworks, and important code components.
-It generates repository-specific interview questions based on the selected difficulty and provides a final performance evaluation with scores, strengths, and areas for improvement.
+RepoViva is an AI-powered interview preparation platform that analyzes your GitHub repository and generates project-specific technical interview questions based on your actual code, architecture, and technical decisions.
